@@ -1,0 +1,100 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+
+// Configuración de pines
+const int PIR_PIN = 20;
+const int LED_PIN = 8;
+
+// Configuración de WiFi
+const char* ssid = "Ck Red";
+const char* password = "balambalam";
+
+// Configuración de Telegram
+const char* BOT_TOKEN = "8162674973:AAHI1L0T-JX-g5DDmHa94Y56_mXumo0SPis";
+const char* CHAT_ID = "-1002345900797";
+
+// Variables de control
+bool ledActivo = false;
+bool cooldown = false;
+unsigned long tiempoLED = 0;
+unsigned long tiempoCooldown = 0;
+
+WiFiClientSecure clienteSeguro;
+HTTPClient clienteHTTP;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(PIR_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+  
+  conectarWiFi();
+  clienteSeguro.setInsecure(); // Ignorar verificación SSL (solo para pruebas)
+}
+
+void loop() {
+  unsigned long tiempoActual = millis();
+  
+  if (!cooldown && !ledActivo) {
+    if (digitalRead(PIR_PIN) == HIGH) {
+      activarSistema(tiempoActual);
+    }
+  }
+  
+  if (ledActivo && (tiempoActual - tiempoLED >= 2000)) {
+    apagarLED();
+    iniciarCooldown(tiempoActual);
+  }
+  
+  if (cooldown && (tiempoActual - tiempoCooldown >= 10000)) {
+    cooldown = false;
+  }
+}
+
+void conectarWiFi() {
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando a WiFi");
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  Serial.println("\nConectado! IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+void activarSistema(unsigned long tiempo) {
+  digitalWrite(LED_PIN, HIGH);
+  ledActivo = true;
+  tiempoLED = tiempo;
+  enviarNotificacionTelegram();
+}
+
+void apagarLED() {
+  digitalWrite(LED_PIN, LOW);
+  ledActivo = false;
+}
+
+void iniciarCooldown(unsigned long tiempo) {
+  cooldown = true;
+  tiempoCooldown = tiempo;
+}
+
+void enviarNotificacionTelegram() {
+  String mensaje = "👮‍♂️ ¡Alerta INTRUSO Detectado!";
+  String url = "https://api.telegram.org/bot" + String(BOT_TOKEN) + 
+               "/sendMessage?chat_id=" + String(CHAT_ID) + 
+               "&text=" + mensaje;
+  
+  clienteHTTP.begin(clienteSeguro, url.c_str());
+  int codigoHTTP = clienteHTTP.GET();
+  
+  if (codigoHTTP > 0) {
+    Serial.printf("Notificación enviada. Código: %d\n", codigoHTTP);
+  } else {
+    Serial.printf("Error en envio. Código: %d\n", codigoHTTP);
+  }
+  
+  clienteHTTP.end();
+}
